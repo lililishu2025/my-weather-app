@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>现代化天气 Pro</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            /* 背景颜色初始值，稍后由 JS 动态接管 */
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #161921 100%);
+            background-size: cover;
+            background-position: center;
+            transition: background 1s ease; /* 需求1：背景变化时的平滑过渡动画 */
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .weather-app {
+            width: 100%;
+            max-width: 420px; /* 需求4：稍微加宽，让界面更大 */
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            border-radius: 35px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            padding: 30px 25px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .search-box { display: flex; gap: 10px; }
+        .search-box input {
+            flex: 1; padding: 12px 15px; border-radius: 20px; border: none;
+            background: rgba(255, 255, 255, 0.2); color: white; font-size: 16px; outline: none;
+        }
+        .search-box input::placeholder { color: rgba(255, 255, 255, 0.6); }
+        .search-box button {
+            padding: 12px 20px; border-radius: 20px; border: none;
+            background: rgba(255, 255, 255, 0.8); color: #1e3c72; font-weight: bold; cursor: pointer; transition: 0.2s;
+        }
+        .search-box button:hover { background: #ffffff; transform: scale(1.05); }
+
+        /* ===== 需求4：当前天气区域变大、更大气 ===== */
+        .current-weather { text-align: center; margin-top: 10px; }
+        .city { font-size: 32px; font-weight: 500; margin-bottom: 5px; }
+        .temp-main {
+            font-size: 110px; font-weight: 200; line-height: 1;
+            margin: 10px 0; text-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            display: flex; justify-content: center; align-items: flex-start;
+        }
+        .temp-main span { font-size: 40px; margin-top: 15px; }
+        .weather-desc { font-size: 22px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+
+        .weather-details {
+            display: flex; justify-content: space-between;
+            background: rgba(0, 0, 0, 0.2); border-radius: 20px; padding: 15px 20px;
+        }
+        .detail-item { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+        .detail-label { font-size: 13px; color: rgba(255, 255, 255, 0.7); }
+        .detail-value { font-size: 16px; font-weight: 600; }
+
+        /* 通用模块标题 */
+        .section-title { font-size: 14px; color: rgba(255, 255, 255, 0.8); margin-bottom: 10px; padding-left: 10px; }
+
+        /* ===== 需求2：横向今天各时段 (逐小时预报) ===== */
+        .hourly-section { border-top: 1px solid rgba(255, 255, 255, 0.2); padding-top: 20px; }
+        .hourly-container {
+            display: flex; gap: 15px; overflow-x: auto; padding: 0 10px 10px 10px; scrollbar-width: none;
+        }
+        .hourly-container::-webkit-scrollbar { display: none; }
+        .hourly-card {
+            display: flex; flex-direction: column; align-items: center; min-width: 55px;
+            background: rgba(255, 255, 255, 0.05); border-radius: 15px; padding: 12px 0; gap: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .hourly-time { font-size: 13px; color: rgba(255, 255, 255, 0.7); }
+        .hourly-icon { font-size: 20px; margin: 3px 0; }
+        .hourly-temp { font-size: 14px; font-weight: 600; }
+
+        /* ===== 需求3：纵向显示未来一周 (纵向列表) ===== */
+        .daily-section { border-top: 1px solid rgba(255, 255, 255, 0.2); padding-top: 20px; }
+        .daily-container { display: flex; flex-direction: column; gap: 8px; }
+        .daily-row {
+            display: flex; align-items: center; justify-content: space-between;
+            background: rgba(255, 255, 255, 0.05); padding: 12px 20px; border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .daily-day { width: 60px; font-size: 15px; }
+        .daily-icon { font-size: 22px; width: 50px; text-align: center; }
+        .daily-temp-range { font-size: 15px; font-weight: 600; text-align: right; width: 80px; }
+        .daily-temp-min { font-size: 14px; color: rgba(255, 255, 255, 0.5); font-weight: 400; }
+
+        .loading { text-align: center; font-size: 14px; color: rgba(255,255,255,0.6); margin-top: 10px; display: none; }
+        .error { color: #ff6b6b; text-align: center; font-size: 14px; display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="weather-app">
+        <div class="search-box">
+            <input type="text" id="cityInput" placeholder="输入城市，如：南阳" onkeypress="handleKeyPress(event)">
+            <button onclick="searchWeather()">查询</button>
+        </div>
+
+        <div id="loadingMsg" class="loading">正在获取天气数据...</div>
+        <div id="errorMsg" class="error">获取失败，请检查城市名</div>
+
+        <!-- 主内容区 -->
+        <div id="mainContent" style="display: none; flex-direction: column; gap: 20px;">
+            
+            <!-- 当前天气 -->
+            <div class="current-weather">
+                <div class="city" id="cityName">--</div>
+                <div class="temp-main"><span id="currentTemp">--</span><span>°</span></div>
+                <div class="weather-desc"><span id="currentIcon">☀️</span><span id="currentDesc">--</span></div>
+            </div>
+
+            <!-- 详细数据 -->
+            <div class="weather-details">
+                <div class="detail-item"><span class="detail-label">体感温度</span><span class="detail-value" id="feelsLike">--°</span></div>
+                <div class="detail-item"><span class="detail-label">湿度</span><span class="detail-value" id="humidity">--%</span></div>
+                <div class="detail-item"><span class="detail-label">风速</span><span class="detail-value" id="windSpeed">--km/h</span></div>
+            </div>
+
+            <!-- 需求2：今天各时段 -->
+            <div class="hourly-section">
+                <div class="section-title">今天各时段天气</div>
+                <div class="hourly-container" id="hourlyContainer"></div>
+            </div>
+
+            <!-- 需求3：未来一周纵向列表 -->
+            <div class="daily-section">
+                <div class="section-title">未来7天预报</div>
+                <div class="daily-container" id="dailyContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 天气代码映射
+        const weatherCodeMap = {
+            0: { desc: "晴", icon: "☀️" }, 1: { desc: "多云", icon: "🌤️" }, 2: { desc: "多云", icon: "⛅" }, 3: { desc: "阴", icon: "☁️" },
+            45: { desc: "雾", icon: "🌫️" }, 48: { desc: "雾凇", icon: "🌫️" },
+            51: { desc: "小毛毛雨", icon: "🌧️" }, 53: { desc: "毛毛雨", icon: "🌧️" }, 55: { desc: "大毛毛雨", icon: "🌧️" },
+            61: { desc: "小雨", icon: "🌦️" }, 63: { desc: "中雨", icon: "🌧️" }, 65: { desc: "大雨", icon: "🌧️" },
+            71: { desc: "小雪", icon: "🌨️" }, 73: { desc: "中雪", icon: "🌨️" }, 75: { desc: "大雪", icon: "❄️" },
+            80: { desc: "阵雨", icon: "🌦️" }, 81: { desc: "强阵雨", icon: "🌧️" }, 82: { desc: "暴雨", icon: "⛈️" },
+            95: { desc: "雷阵雨", icon: "⛈️" }
+        };
+
+        // 需求1：根据天气和时间，生成动态背景
+        function updateBackground(weatherCode, isDay) {
+            let bg = "";
+            if (!isDay) {
+                // 夜间背景（深蓝/星空）
+                bg = "linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)";
+            } else {
+                // 白天背景判断
+                if (weatherCode === 0) bg = "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)"; // 晴天（亮蓝）
+                else if (weatherCode <= 3) bg = "linear-gradient(135deg, #537895 0%, #09203f 100%)"; // 多云/阴（灰蓝）
+                else if (weatherCode >= 51 && weatherCode <= 82) bg = "linear-gradient(135deg, #3a7bd5 0%, #3a6073 100%)"; // 雨（深蓝）
+                else if (weatherCode >= 71 && weatherCode <= 75) bg = "linear-gradient(135deg, #8e9eab 0%, #eef2f3 100%)"; // 雪（冷灰）
+                else bg = "linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #161921 100%)"; // 默认
+            }
+            document.body.style.background = bg;
+        }
+
+        window.onload = () => fetchWeather("北京");
+
+        function handleKeyPress(e) { if (e.key === 'Enter') searchWeather(); }
+        function searchWeather() {
+            const city = document.getElementById('cityInput').value.trim();
+            if (city) fetchWeather(city);
+        }
+
+        async function fetchWeather(cityName) {
+            document.getElementById('loadingMsg').style.display = 'block';
+            document.getElementById('errorMsg').style.display = 'none';
+            document.getElementById('mainContent').style.display = 'none';
+
+            try {
+                const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1&language=zh&format=json`;
+                const geoRes = await fetch(geoUrl);
+                const geoData = await geoRes.json();
+
+                if (!geoData.results || geoData.results.length === 0) throw new Error("找不到该城市");
+
+                const location = geoData.results[0];
+                
+                // 注意：这里加入了 hourly 参数（用于需求2）和 is_day（判断白天黑夜）
+                const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${location.latitude}&longitude=${location.longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,is_day&hourly=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto`;
+                const weatherRes = await fetch(weatherUrl);
+                const weatherData = await weatherRes.json();
+
+                renderUI(location.name, weatherData);
+
+            } catch (error) {
+                document.getElementById('errorMsg').style.display = 'block';
+                document.getElementById('errorMsg').innerText = `查询失败：${error.message}`;
+            } finally {
+                document.getElementById('loadingMsg').style.display = 'none';
+            }
+        }
+
+        function renderUI(cityName, data) {
+            const current = data.current;
+            const daily = data.daily;
+            const hourly = data.hourly;
+            
+            const weatherInfo = weatherCodeMap[current.weather_code] || { desc: "未知", icon: "🌡️" };
+
+            // === 需求1：触发动态背景更新 ===
+            updateBackground(current.weather_code, current.is_day === 1);
+
+            // 填充当前天气（需求4界面变大已通过CSS实现）
+            document.getElementById('cityName').innerText = cityName;
+            document.getElementById('currentTemp').innerText = Math.round(current.temperature_2m);
+            document.getElementById('currentIcon').innerText = weatherInfo.icon;
+            document.getElementById('currentDesc').innerText = weatherInfo.desc;
+            document.getElementById('feelsLike').innerText = Math.round(current.apparent_temperature) + '°';
+            document.getElementById('humidity').innerText = current.relative_humidity_2m + '%';
+            document.getElementById('windSpeed').innerText = current.wind_speed_10m + 'km/h';
+
+            // === 需求2：渲染横向各时段 ===
+            const hourlyContainer = document.getElementById('hourlyContainer');
+            hourlyContainer.innerHTML = '';
+            
+            // 找到当前时间对应的数组索引
+            const now = new Date();
+            const currentHourStr = now.toISOString().slice(0, 13) + ":00"; 
+            let startIndex = hourly.time.findIndex(t => t.startsWith(currentHourStr));
+            if (startIndex === -1) startIndex = 0; // 找不到就从0开始
+
+            // 向后取 12 个时段（展示半天）
+            for (let i = startIndex; i < startIndex + 12; i++) {
+                if (!hourly.time[i]) break;
+                const timeObj = new Date(hourly.time[i]);
+                const timeText = i === startIndex ? "现在" : `${timeObj.getHours()}:00`;
+                const hInfo = weatherCodeMap[hourly.weather_code[i]] || { icon: "🌡️" };
+                const temp = Math.round(hourly.temperature_2m[i]);
+
+                const card = document.createElement('div');
+                card.className = 'hourly-card';
+                card.innerHTML = `
+                    <div class="hourly-time">${timeText}</div>
+                    <div class="hourly-icon">${hInfo.icon}</div>
+                    <div class="hourly-temp">${temp}°</div>
+                `;
+                hourlyContainer.appendChild(card);
+            }
+
+            // === 需求3：渲染纵向未来7天 ===
+            const dailyContainer = document.getElementById('dailyContainer');
+            dailyContainer.innerHTML = '';
+
+            for (let i = 0; i < 7; i++) { 
+                const date = new Date(daily.time[i]);
+                let dayText = i === 0 ? "今天" : i === 1 ? "明天" : "周" + "日一二三四五六".charAt(date.getDay());
+                const dayInfo = weatherCodeMap[daily.weather_code[i]] || { icon: "🌡️" };
+                const maxTemp = Math.round(daily.temperature_2m_max[i]);
+                const minTemp = Math.round(daily.temperature_2m_min[i]);
+
+                const row = document.createElement('div');
+                row.className = 'daily-row';
+                row.innerHTML = `
+                    <div class="daily-day">${dayText}</div>
+                    <div class="daily-icon">${dayInfo.icon}</div>
+                    <div class="daily-temp-range">${maxTemp}° <span class="daily-temp-min">/ ${minTemp}°</span></div>
+                `;
+                dailyContainer.appendChild(row);
+            }
+
+            document.getElementById('mainContent').style.display = 'flex';
+        }
+    </script>
+</body>
+</html>
